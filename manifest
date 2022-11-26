@@ -1,0 +1,12 @@
+: 1
+name: libtwili
+version: 1.0.0
+summary: twili C++ library
+license: BSD-3-Clause
+description-file: README.md
+url: https://github.com/Plaristote/libtwili
+email: michael@unetresgrossebite.com
+depends: * build2 >= 0.15.0
+depends: * bpkg >= 0.15.0
+depends: libclang >= 13.0.0
+depends: libcrails-semantics >= 2.0.0

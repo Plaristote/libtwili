@@ -1,0 +1,35 @@
+intf_libs = # Interface dependencies.
+impl_libs = # Implementation dependencies.
+import intf_libs += libclang%lib{clang}
+import intf_libs += libcrails-semantics%lib{crails-semantics}
+
+lib{twili}: {hxx ixx txx cxx}{** -version} hxx{version} $impl_libs $intf_libs
+
+hxx{version}: in{version} $src_root/manifest
+
+hxx{export}@./: cxx.importable = false
+
+cxx.poptions =+ "-I$out_root" "-I$src_root"
+
+{hbmia obja}{*}: cxx.poptions += -DLIBTWILI_STATIC_BUILD
+{hbmis objs}{*}: cxx.poptions += -DLIBTWILI_SHARED_BUILD
+
+lib{twili}:
+{
+  cxx.export.poptions = "-I$out_root" "-I$src_root"
+  cxx.export.libs = $intf_libs
+}
+
+liba{twili}: cxx.export.poptions += -DLIBTWILI_STATIC
+libs{twili}: cxx.export.poptions += -DLIBTWILI_SHARED
+
+if $version.pre_release
+  lib{twili}: bin.lib.version = "-$version.project_id"
+else
+  lib{twili}: bin.lib.version = "-$version.major.$version.minor"
+
+{hxx ixx txx}{*}:
+{
+  install         = include/libtwili/
+  install.subdirs = true
+}

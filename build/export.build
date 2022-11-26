@@ -1,0 +1,6 @@
+$out_root/
+{
+  include libtwili/
+}
+
+export $out_root/libtwili/$import.target
