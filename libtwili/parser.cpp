@@ -219,7 +219,11 @@ CXChildVisitResult TwiliParser::visit_typedef(const std::string& symbol_name, CX
       pointed_to.is_reference += parent_type->is_reference;
     }
     else
-      pointed_to.type_full_name = cxStringToStdString(clang_getTypeSpelling(type));
+    {
+      TypeDefinition definite_type;
+      definite_type.load_from(cxStringToStdString(clang_getTypeSpelling(type)), types);
+      pointed_to.type_full_name = definite_type.name;
+    }
     pointed_to.is_const = pointed_to.is_const || pointed_from.is_const;
     pointed_to.is_pointer += pointed_from.is_pointer;
     pointed_to.is_reference += pointed_from.is_reference;
