@@ -285,6 +285,8 @@ CXChildVisitResult TwiliParser::visit_class(const std::string& symbol_name, CXCu
   existing_class = find_class_by_name(new_class.klass.full_name);
   if (existing_class != nullptr)
   {
+    if (existing_class->klass.is_empty())
+      existing_class->klass.include_path = get_relative_path();
     existing_class->cursors.push_back(cursor);
     return existing_class->klass.is_empty() ? CXChildVisit_Recurse : CXChildVisit_Continue;
   }

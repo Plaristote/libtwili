@@ -93,7 +93,7 @@ struct ClassDefinition : public NamespaceDefinition
   std::vector<MethodDefinition> constructors;
   std::vector<MethodDefinition> methods;
   TemplateParameters            template_parameters;
-  bool is_empty() const { return constructors.size() + methods.size() == 0; }
+  bool is_empty() const { return constructors.size() + methods.size() + bases.size() == 0; }
   bool is_template() const { return template_parameters.size() > 0; }
   bool implements(const MethodDefinition&) const;
 };
