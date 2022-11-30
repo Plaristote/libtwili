@@ -2,6 +2,7 @@
 #include <string>
 #include <optional>
 #include <vector>
+#include <unordered_map>
 #include <clang-c/Index.h>
 
 struct TemplateParameter
@@ -34,8 +35,9 @@ struct TypeDefinition
 
 struct EnumDefinition
 {
-  std::string                name;
-  std::map<std::string, int> flags;
+  std::string name;
+  std::string full_name;
+  std::unordered_map<std::string, long long> flags;
 };
 
 struct ParamDefinition : public std::string

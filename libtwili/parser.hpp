@@ -38,12 +38,21 @@ class TwiliParser
     }
   };
 
+  struct EnumContext
+  {
+    EnumDefinition en;
+    CXCursor cursor;
+    bool operator==(const std::string& value) const { return en.full_name == value; }
+    bool operator==(const CXCursor value) const { return clang_equalCursors(value, cursor); }
+    operator EnumDefinition() const { return en; }
+  };
+
   std::vector<std::string>        directories;
   std::vector<TypeDefinition>     types;
   std::vector<ClassContext>       classes;
   std::vector<NamespaceContext>   namespaces;
   std::vector<FunctionDefinition> functions;
-  std::vector<EnumDefinition>     enums;
+  std::vector<EnumContext>        enums;
   NamespaceContext                current_ns;
   NamespaceDefinition             root_ns;
   CXCursor                        cursor;
@@ -61,6 +70,7 @@ public:
   std::vector<NamespaceDefinition> get_namespaces() const;
   const std::vector<FunctionDefinition>& get_functions() const { return functions; }
   const std::vector<TypeDefinition>& get_types() const { return types; }
+  std::vector<EnumDefinition> get_enums() const;
 
   std::filesystem::path get_current_path() const;
   std::string           get_relative_path() const;
@@ -81,6 +91,9 @@ private:
   CXChildVisitResult visit_typedef(const std::string& symbol_name, CXCursor parent);
   FunctionDefinition visit_function(const std::string& symbol_name, CXCursor parent);
   CXChildVisitResult visit_field(ClassContext&, const std::string& symbol_name, bool is_static);
+  CXChildVisitResult visit_enum(const std::string& symbol_name, CXCursor parent);
+  CXChildVisitResult visit_enum_constant(const std::string& symbol_name, CXCursor parent);
+  std::optional<CXChildVisitResult> try_to_visit_template_parameter(const std::string& symbol_name);
 
   std::optional<std::string> fullname_for(CXCursor) const;
   ClassContext* find_class_for(CXCursor);
