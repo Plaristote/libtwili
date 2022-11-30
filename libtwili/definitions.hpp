@@ -32,19 +32,40 @@ struct TypeDefinition
   std::string     to_full_name() const;
 };
 
+struct EnumDefinition
+{
+  std::string                name;
+  std::map<std::string, int> flags;
+};
+
 struct ParamDefinition : public std::string
 {
   ParamDefinition() {}
+  ParamDefinition(CXCursor cursor, const std::vector<TypeDefinition>& known_types);
   ParamDefinition(CXType type, const std::vector<TypeDefinition>& known_types);
   ParamDefinition(const std::string& name) : std::string(name) {}
 
-  bool is_const     = false;
-  int  is_reference = 0;
-  int  is_pointer   = 0;
+  bool        is_const     = false;
+  int         is_reference = 0;
+  int         is_pointer   = 0;
+  std::string name;
+  std::string type_alias;
 
   std::string to_string() const;
 
   bool operator==(const ParamDefinition& other) const { return to_string() == other.to_string(); }
+private:
+  void initialize_type(CXType type, const std::vector<TypeDefinition>& known_types);
+};
+
+struct FieldDefinition : public ParamDefinition
+{
+  FieldDefinition() {}
+  FieldDefinition(CXCursor cursor, const std::vector<TypeDefinition>& known_types) : ParamDefinition(cursor, known_types) {}
+  bool        is_static = false;
+  std::string visibility;
+
+  bool operator==(const FieldDefinition& other) const { return name == other.name; }
 };
 
 struct InvokableDefinition
@@ -72,6 +93,7 @@ struct FunctionDefinition : public InvokableDefinition
 {
   std::string name;
   std::string full_name;
+  std::string from_file;
   std::string include_path;
   std::string cpp_context() const;
 };
@@ -87,11 +109,13 @@ struct NamespaceDefinition
 struct ClassDefinition : public NamespaceDefinition
 {
   std::string                   type;
+  std::string                   from_file;
   std::string                   include_path;
   std::vector<std::string>      bases;
   std::vector<std::string>      known_bases;
   std::vector<MethodDefinition> constructors;
   std::vector<MethodDefinition> methods;
+  std::vector<FieldDefinition>  fields;
   TemplateParameters            template_parameters;
   bool is_empty() const { return constructors.size() + methods.size() + bases.size() == 0; }
   bool is_template() const { return template_parameters.size() > 0; }

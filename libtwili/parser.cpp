@@ -4,6 +4,7 @@
 #include <sstream>
 #include <crails/utils/split.hpp>
 #include <crails/utils/join.hpp>
+#include <crails/utils/semantics.hpp>
 
 using namespace std;
 
@@ -44,7 +45,12 @@ static bool find_parsing_errors(CXTranslationUnit translationUnit)
   return foundError;
 }
 
-class TwiliParser;
+static void twilog(const std::stringstream& stream)
+{
+  cout << '\r' << stream.str() << endl;
+}
+
+#define TWILOG(body) twilog(std::stringstream() << body)
 
 TwiliParser* parser = nullptr;
 
@@ -56,6 +62,22 @@ TwiliParser::TwiliParser()
 TwiliParser::~TwiliParser()
 {
   parser = nullptr;
+}
+
+void TwiliParser::print_state()
+{
+  static const vector<char> cursors{'\\', '|', '/', '-'};
+  static int pos = 0;
+  string cursor_view("\r");
+
+  if (pos >= cursors.size())
+    pos = 0;
+  cursor_view += cursors[pos++];
+  cout << cursor_view << " parsing... found "
+       << types.size() << " types, "
+       << classes.size() << " objects, "
+       << functions.size() << " functions";
+  flush(cout);
 }
 
 void TwiliParser::add_directory(const string& path)
@@ -222,7 +244,7 @@ CXChildVisitResult TwiliParser::visit_typedef(const std::string& symbol_name, CX
     {
       TypeDefinition definite_type;
       definite_type.load_from(cxStringToStdString(clang_getTypeSpelling(type)), types);
-      pointed_to.type_full_name = definite_type.name;
+      pointed_to.type_full_name = Crails::join(definite_type.scopes, "::") + "::" + definite_type.name;
     }
     pointed_to.is_const = pointed_to.is_const || pointed_from.is_const;
     pointed_to.is_pointer += pointed_from.is_pointer;
@@ -262,6 +284,7 @@ CXChildVisitResult TwiliParser::visit_class(const std::string& symbol_name, CXCu
   ClassContext* existing_class;
 
   new_class.klass.name = symbol_name;
+  new_class.klass.from_file = get_current_path().string();
   new_class.klass.include_path = get_relative_path();
   new_class.cursors.push_back(cursor);
   new_class.current_access = kind == CXCursor_StructDecl ? CX_CXXPublic : CX_CXXPrivate;
@@ -290,7 +313,10 @@ CXChildVisitResult TwiliParser::visit_class(const std::string& symbol_name, CXCu
   if (existing_class != nullptr)
   {
     if (existing_class->klass.is_empty())
+    {
+      existing_class->klass.from_file = get_current_path().string();
       existing_class->klass.include_path = get_relative_path();
+    }
     existing_class->cursors.push_back(cursor);
     return existing_class->klass.is_empty() ? CXChildVisit_Recurse : CXChildVisit_Continue;
   }
@@ -298,11 +324,32 @@ CXChildVisitResult TwiliParser::visit_class(const std::string& symbol_name, CXCu
   return CXChildVisit_Recurse;
 }
 
+static string remove_template_parameters(string source)
+{
+  size_t template_parameters_at = source.find("<");
+
+  if (template_parameters_at != string::npos)
+    source = source.substr(0, template_parameters_at);
+  return source;
+}
+
+static string strip_declaration_type_from_class_declaration(string source)
+{
+  static const string class_declaration("class ");
+  static const string struct_declaration("struct ");
+
+  if (source.find(class_declaration) == 0)
+    source = source.substr(class_declaration.size());
+  else if (source.find(struct_declaration) == 0)
+    source = source.substr(struct_declaration.size());
+  return Crails::strip(source);
+}
+
 void TwiliParser::visit_base_class(ClassContext& current_class, const std::string& cursor_text)
 {
-  std::string symbol_name = cursor_text.find("class ")
-    ? cursor_text.substr(5)
-    : (cursor_text.find("struct ") ? cursor_text.substr(6) : cursor_text);
+  string symbol_name = strip_declaration_type_from_class_declaration(
+    remove_template_parameters(cursor_text)
+  );
   ClassContext* base_class = find_class_like(symbol_name, current_class.klass.full_name);
 
   if (base_class)
@@ -313,8 +360,39 @@ void TwiliParser::visit_base_class(ClassContext& current_class, const std::strin
   else
   {
     current_class.klass.bases.push_back(symbol_name);
-    cout << "(i) " << current_class.klass.full_name << " base class " << symbol_name << " cannot be solved" << endl;
+    TWILOG("(i) " << current_class.klass.full_name << " base class " << symbol_name << " cannot be solved");
   }
+}
+
+template<typename MODEL>
+static void set_visibility_on(MODEL& model, CX_CXXAccessSpecifier access)
+{
+  switch (access)
+  {
+    default:
+      model.visibility = "public";
+      break ;
+    case CX_CXXProtected:
+      model.visibility = "protected";
+      break ;
+    case CX_CXXPrivate:
+      model.visibility = "private";
+      break ;
+  }
+}
+
+CXChildVisitResult TwiliParser::visit_field(ClassContext& current_class, const string& symbol_name, bool is_static)
+{
+  FieldDefinition field(cursor, types);
+  auto it = std::find(current_class.klass.fields.begin(), current_class.klass.fields.end(), field);
+
+  if (it == current_klass.fields.end())
+  {
+    field.is_static = is_static;
+    set_visibility_on(field, current_class.current_access);
+    current_class.klass.fields.push_back(field);
+  }
+  return CXChildVisit_Continue;
 }
 
 MethodDefinition TwiliParser::create_method(const std::string& symbol_name, CXCursor)
@@ -333,7 +411,7 @@ MethodDefinition TwiliParser::create_method(const std::string& symbol_name, CXCu
   if (return_type.kind != 0 && return_type.kind != CXType_Void)
     new_method.return_type = ParamDefinition(return_type, types);
   for (int i = 0 ; (arg_type = clang_getArgType(method_type, i)).kind != 0 ; ++i)
-    new_method.params.push_back(ParamDefinition(arg_type, types));
+    new_method.params.push_back(ParamDefinition(clang_Cursor_getArgument(cursor, i), types));
   /*
   cout << "  -> with method `" << new_method.name << "`\n";
   if (new_method.return_type)
@@ -352,18 +430,7 @@ CXChildVisitResult TwiliParser::visit_method(ClassContext& current_class, const 
     ? current_class.klass.constructors
     : current_class.klass.methods;
 
-  switch (current_class.current_access)
-  {
-    default:
-      method.visibility = "public";
-      break ;
-    case CX_CXXProtected:
-      method.visibility = "protected";
-      break ;
-    case CX_CXXPrivate:
-      method.visibility = "private";
-      break ;
-  }
+  set_visibility_on(method, current_class.current_access);
   list.push_back(method);
   if (clang_getCursorKind(cursor) == CXCursor_FunctionTemplate)
   {
@@ -383,6 +450,7 @@ FunctionDefinition TwiliParser::visit_function(const std::string& symbol_name, C
 
   new_func.name = symbol_name;
   new_func.is_variadic = clang_Cursor_isVariadic(cursor);
+  new_func.from_file = get_current_path().string();
   new_func.include_path = get_relative_path();
   if (context_name)
     new_func.full_name = *context_name + "::" + new_func.name;
@@ -422,6 +490,7 @@ CXChildVisitResult TwiliParser::visit_template_default_value(const string& symbo
 
 CXChildVisitResult TwiliParser::visitor(CXCursor parent, CXClientData)
 {
+  print_state();
   if (is_included(get_current_path()))
   {
     auto kind = clang_getCursorKind(cursor);
@@ -482,13 +551,18 @@ CXChildVisitResult TwiliParser::visitor(CXCursor parent, CXClientData)
         case CXCursor_CXXAccessSpecifier:
           current_class->current_access = clang_getCXXAccessSpecifier(cursor);
           break ;
-        case CXCursor_CXXMethod:
         case CXCursor_FunctionTemplate:
+          TWILOG("  METHOD TEMPLATE: " << clang_getCursorKindSpelling(clang_getCursorKind(cursor)) << " -> " <<  symbol_name);
+        case CXCursor_CXXMethod:
           return visit_method(*current_class, symbol_name, parent);
+        case CXCursor_FieldDecl:
+          return visit_field(*current_class, symbol_name, false);
+        case CXCursor_VarDecl:
+          return visit_field(*current_class, symbol_name, true);
         case CXCursor_Constructor:
           return visit_method(*current_class, symbol_name, parent);
         default:
-          //cout << "  Unhandled decl: " << clang_getCursorKindSpelling(clang_getCursorKind(cursor)) << " -> " <<  symbol_name << endl;
+          TWILOG("  Unhandled decl: " << clang_getCursorKindSpelling(clang_getCursorKind(cursor)) << " -> " <<  symbol_name);
           break ;
         }
         return CXChildVisit_Recurse;

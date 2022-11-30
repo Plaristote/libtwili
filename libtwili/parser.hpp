@@ -43,6 +43,7 @@ class TwiliParser
   std::vector<ClassContext>       classes;
   std::vector<NamespaceContext>   namespaces;
   std::vector<FunctionDefinition> functions;
+  std::vector<EnumDefinition>     enums;
   NamespaceContext                current_ns;
   NamespaceDefinition             root_ns;
   CXCursor                        cursor;
@@ -79,6 +80,7 @@ private:
   CXChildVisitResult visit_namespace(const std::string& symbol_name, CXCursor parent);
   CXChildVisitResult visit_typedef(const std::string& symbol_name, CXCursor parent);
   FunctionDefinition visit_function(const std::string& symbol_name, CXCursor parent);
+  CXChildVisitResult visit_field(ClassContext&, const std::string& symbol_name, bool is_static);
 
   std::optional<std::string> fullname_for(CXCursor) const;
   ClassContext* find_class_for(CXCursor);
@@ -88,4 +90,5 @@ private:
   MethodDefinition create_method(const std::string& symbol_name, CXCursor parent);
   void register_type(const ClassContext&);
   std::string solve_typeref();
+  void print_state();
 };

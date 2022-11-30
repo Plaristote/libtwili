@@ -48,7 +48,7 @@ bool run_parser(TwiliParser& parser, const vector<filesystem::path>& files, int 
       CXTranslationUnit_None
     );
 
-    cout << "- Importing " << filepath.string() << endl;
+    cout << "\r- Importing " << filepath.string() << endl;
     if (unit == nullptr || !parser(unit))
     {
       cerr << "/!\\ Failed to parse file " << filepath.string() << endl;

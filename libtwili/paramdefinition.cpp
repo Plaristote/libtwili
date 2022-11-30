@@ -21,7 +21,20 @@ const map<CXTypeKind, string> type_to_name{
   {CXType_LongDouble, "long double"}
 };
 
+string cxStringToStdString(const CXString& source);
+
+ParamDefinition::ParamDefinition(CXCursor cursor, const std::vector<TypeDefinition>& known_types)
+{
+  name = cxStringToStdString(clang_getCursorSpelling(cursor));
+  initialize_type(clang_getCursorType(cursor), known_types);
+}
+
 ParamDefinition::ParamDefinition(CXType type, const std::vector<TypeDefinition>& known_types)
+{
+  initialize_type(type, known_types);
+}
+
+void ParamDefinition::initialize_type(CXType type, const std::vector<TypeDefinition>& known_types)
 {
   auto it = type_to_name.find(type.kind);
 
@@ -33,6 +46,7 @@ ParamDefinition::ParamDefinition(CXType type, const std::vector<TypeDefinition>&
     optional<TypeDefinition> parent_type;
 
     param_type.load_from(type, known_types);
+    type_alias = param_type.name;
     is_const = param_type.is_const;
     is_reference += param_type.is_reference;
     is_pointer += param_type.is_pointer;
