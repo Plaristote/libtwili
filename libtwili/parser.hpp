@@ -84,7 +84,7 @@ private:
   CXChildVisitResult visitor(CXCursor parent, CXClientData clientData);
   CXChildVisitResult visit_class(const std::string& symbol_name, CXCursor parent);
   CXChildVisitResult visit_template_parameter(ClassContext& class_context, const std::string& symbol_name);
-  CXChildVisitResult visit_template_default_value(const std::string& symbol_name);
+  CXChildVisitResult visit_template_default_value(const std::string& symbol_name, CXCursor parent);
   CXChildVisitResult visit_method(ClassContext& class_context, const std::string& symbol_name, CXCursor parent);
   void               visit_base_class(ClassContext& class_context, const std::string& symbol_name);
   CXChildVisitResult visit_namespace(const std::string& symbol_name, CXCursor parent);
@@ -93,7 +93,7 @@ private:
   CXChildVisitResult visit_field(ClassContext&, const std::string& symbol_name, bool is_static);
   CXChildVisitResult visit_enum(const std::string& symbol_name, CXCursor parent);
   CXChildVisitResult visit_enum_constant(const std::string& symbol_name, CXCursor parent);
-  std::optional<CXChildVisitResult> try_to_visit_template_parameter(const std::string& symbol_name);
+  std::optional<CXChildVisitResult> try_to_visit_template_parameter(const std::string& symbol_name, CXCursor parent);
 
   std::optional<std::string> fullname_for(CXCursor) const;
   ClassContext* find_class_for(CXCursor);
@@ -102,6 +102,6 @@ private:
 
   MethodDefinition create_method(const std::string& symbol_name, CXCursor parent);
   void register_type(const ClassContext&);
-  std::string solve_typeref();
+  std::string solve_typeref(CXCursor context);
   void print_state();
 };

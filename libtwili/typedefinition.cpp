@@ -92,20 +92,31 @@ TypeDefinition& TypeDefinition::load_from(const string& type, const vector<TypeD
   return *this;
 }
 
-unsigned char TypeDefinition::type_match(const TypeDefinition& b)
+unsigned char TypeDefinition::type_match(const TypeDefinition& b) const
 {
   if (name == b.name)
   {
-    auto a_it = scopes.rbegin();
-    auto b_it = b.scopes.rbegin();
+    vector<string> context = declaration_scope;
+    string self_context = Crails::join(scopes, "::");
+    string other_context = Crails::join(b.scopes, "::");
+    int iterations = context.size();
 
-    while (a_it != scopes.rend() && b_it != b.scopes.rend() && *a_it == *b_it)
+    while (iterations >= 0)
     {
-      a_it++;
-      b_it++;
+      string candidate_context = Crails::join(context, "::");
+
+      if (self_context.length())
+        candidate_context += "::" + self_context;
+      while (candidate_context[0] == ':')
+        candidate_context = candidate_context.substr(1);
+      if (candidate_context == other_context)
+        return 2;
+      if (context.size() > 0)
+        context.resize(context.size() - 1);
+      iterations--;
     }
-    if (a_it == scopes.rend())
-      return b_it == b.scopes.rend() ? 2 : 1;
+    if (other_context.find(self_context) == (other_context.size() - self_context.size()))
+      return 1;
   }
   return 0;
 }

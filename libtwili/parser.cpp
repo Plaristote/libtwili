@@ -214,9 +214,25 @@ void TwiliParser::register_type(const ClassContext& new_class)
   type_definition.name = new_class.klass.name;
   type_definition.scopes = Crails::split<std::string, std::vector<std::string>>(new_class.klass.cpp_context(), ':');
   type_definition.type_full_name = new_class.klass.full_name;
+  type_definition.kind = new_class.klass.type == "struct" ? StructKind : ClassKind;
   types.push_back(type_definition);
   classes.push_back(new_class);
   function_template_context = nullptr;
+}
+
+static bool are_types_identical(const TypeDefinition& a, const TypeDefinition& b)
+{
+  if (a.scopes.size() == b.scopes.size())
+  {
+    for (int i = 0 ; i < a.scopes.size() ; ++i)
+    {
+      if (a.scopes[i] != b.scopes[i])
+        return false;
+    }
+  }
+  return a.raw_name == b.raw_name &&
+         a.name == b.name &&
+         a.type_full_name == b.type_full_name;
 }
 
 CXChildVisitResult TwiliParser::visit_typedef(const std::string& symbol_name, CXCursor parent)
@@ -233,6 +249,7 @@ CXChildVisitResult TwiliParser::visit_typedef(const std::string& symbol_name, CX
 
     pointed_from.load_from(type, types);
     pointed_to.load_from(typedefType, types);
+    pointed_to.kind = TypedefKind;
     explicit_from.name = pointed_from.name;
     for (const auto& part : Crails::split(*cpp_context, ':'))
       explicit_from.scopes.push_back(part);
@@ -256,10 +273,12 @@ CXChildVisitResult TwiliParser::visit_typedef(const std::string& symbol_name, CX
       definite_type.load_from(cxStringToStdString(clang_getTypeSpelling(type)), types);
       pointed_to.type_full_name = Crails::join(definite_type.scopes, "::") + "::" + definite_type.name;
     }
+    pointed_to.declaration_scope = explicit_from.scopes;
     pointed_to.is_const = pointed_to.is_const || pointed_from.is_const;
     pointed_to.is_pointer += pointed_from.is_pointer;
     pointed_to.is_reference += pointed_from.is_reference;
-    types.push_back(pointed_to);
+    if (find_if(types.begin(), types.end(), bind(are_types_identical, pointed_to, placeholders::_1)) == types.end())
+      types.push_back(pointed_to);
   }
   else
     cerr << "(i) Could not solve typedef " << symbol_name << endl;
@@ -315,7 +334,7 @@ CXChildVisitResult TwiliParser::visit_class(const std::string& symbol_name, CXCu
       new_class.klass.full_name = *context_fullname + "::" + symbol_name;
     else
     {
-      cerr << "(!) Couldn't find context for class " << symbol_name << endl;
+      TWILOG("(!) Couldn't find context for class " << symbol_name);
       return CXChildVisit_Continue;
     }
   }
@@ -421,7 +440,14 @@ MethodDefinition TwiliParser::create_method(const std::string& symbol_name, CXCu
   if (return_type.kind != 0 && return_type.kind != CXType_Void)
     new_method.return_type = ParamDefinition(return_type, types);
   for (int i = 0 ; (arg_type = clang_getArgType(method_type, i)).kind != 0 ; ++i)
-    new_method.params.push_back(ParamDefinition(clang_Cursor_getArgument(cursor, i), types));
+  {
+    CXCursor arg_cursor = clang_Cursor_getArgument(cursor, i);
+
+    if (arg_cursor.kind != 0 && clang_getCursorType(arg_cursor).kind != 0)
+      new_method.params.push_back(ParamDefinition(arg_cursor, types));
+    else
+      new_method.params.push_back(ParamDefinition(arg_type, types));
+  }
   /*
   cout << "  -> with method `" << new_method.name << "`\n";
   if (new_method.return_type)
@@ -490,9 +516,11 @@ CXChildVisitResult TwiliParser::visit_enum(const string& symbol_name, CXCursor p
 
     new_context.en.name = symbol_name;
     new_context.en.full_name = cpp_context + "::" + symbol_name;
+    new_context.en.from_file = get_current_path().string();
     new_context.cursor = cursor;
 
     TypeDefinition type_definition;
+    type_definition.kind = EnumKind;
     type_definition.name = new_context.en.name;
     type_definition.scopes = Crails::split<std::string, std::vector<std::string>>(cpp_context, ':');
     type_definition.type_full_name = new_context.en.full_name;
@@ -508,27 +536,33 @@ CXChildVisitResult TwiliParser::visit_enum_constant(const string& symbol_name, C
 
   if (parent_enum != enums.end())
   {
-    parent_enum->en.flags.emplace(symbol_name, clang_getEnumConstantDeclValue(cursor));
+    parent_enum->en.flags.push_back({symbol_name, clang_getEnumConstantDeclValue(cursor)});
   }
   return CXChildVisit_Recurse;
 }
 
-std::string TwiliParser::solve_typeref()
+std::string TwiliParser::solve_typeref(CXCursor context)
 {
   TypeDefinition type;
+  auto declaration_scope = fullname_for(context);
 
+  if (declaration_scope)
+    type.declaration_scope = Crails::split<string, vector<string>>(*declaration_scope, ':');
   type.load_from(clang_getCursorType(cursor), types);
   return type.solve_type(types);
 }
 
-CXChildVisitResult TwiliParser::visit_template_default_value(const string& symbol_name)
+CXChildVisitResult TwiliParser::visit_template_default_value(const string& symbol_name, CXCursor parent)
 {
-  class_template_context->klass.template_parameters.rbegin()
-    ->default_value = solve_typeref();
+  TemplateParameter& param = *class_template_context->klass.template_parameters.rbegin();
+  string value = solve_typeref(parent);
+
+  if (value != ("::" + param.name))
+    param.default_value = solve_typeref(parent);
   return CXChildVisit_Continue;
 }
 
-optional<CXChildVisitResult> TwiliParser::try_to_visit_template_parameter(const string& symbol_name)
+optional<CXChildVisitResult> TwiliParser::try_to_visit_template_parameter(const string& symbol_name, CXCursor parent)
 {
   auto kind = clang_getCursorKind(cursor);
 
@@ -543,7 +577,10 @@ optional<CXChildVisitResult> TwiliParser::try_to_visit_template_parameter(const 
         auto& param = *function_template_context->template_parameters.rbegin();
         if (!param.default_value.length())
         {
-          param.default_value = solve_typeref();
+          string value = solve_typeref(parent);
+
+          if (value != ("::" + param.name))
+            param.default_value = solve_typeref(parent);
           return CXChildVisit_Continue ;
         }
       }
@@ -570,12 +607,12 @@ CXChildVisitResult TwiliParser::visitor(CXCursor parent, CXClientData)
     if (class_template_context)
     {
       if (kind == CXCursor_TypeRef)
-        visit_template_default_value(symbol_name);
+        visit_template_default_value(symbol_name, parent);
       class_template_context = nullptr;
     }
     if (function_template_context)
     {
-      auto result = try_to_visit_template_parameter(symbol_name);
+      auto result = try_to_visit_template_parameter(symbol_name, parent);
       if (result) return *result;
     }
     if (kind == CXCursor_Namespace)
@@ -590,12 +627,6 @@ CXChildVisitResult TwiliParser::visitor(CXCursor parent, CXClientData)
       return visit_class(symbol_name, parent);
     else if (kind == CXCursor_ClassTemplate)
       functions.push_back(visit_function(symbol_name, parent));
-    else if (kind == CXCursor_FunctionTemplate)
-    {
-      functions.push_back(visit_function(symbol_name, parent));
-      function_template_context = &(*functions.rbegin());
-      return CXChildVisit_Recurse;
-    }
     else
     {
       ClassContext* current_class = find_class_for(parent);
@@ -623,9 +654,15 @@ CXChildVisitResult TwiliParser::visitor(CXCursor parent, CXClientData)
         case CXCursor_Constructor:
           return visit_method(*current_class, symbol_name, parent);
         default:
-          TWILOG("  Unhandled decl: " << clang_getCursorKindSpelling(clang_getCursorKind(cursor)) << " -> " <<  symbol_name);
+          //TWILOG("  Unhandled decl: " << clang_getCursorKindSpelling(clang_getCursorKind(cursor)) << " -> " <<  symbol_name);
           break ;
         }
+        return CXChildVisit_Recurse;
+      }
+      else if (kind == CXCursor_FunctionTemplate)
+      {
+        functions.push_back(visit_function(symbol_name, parent));
+        function_template_context = &(*functions.rbegin());
         return CXChildVisit_Recurse;
       }
       //else

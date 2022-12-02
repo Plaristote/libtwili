@@ -14,11 +14,22 @@ struct TemplateParameter
 
 typedef std::vector<TemplateParameter> TemplateParameters;
 
+enum TypeKind
+{
+  ClassKind = 1,
+  StructKind,
+  TypedefKind,
+  EnumKind,
+  NamespaceKind
+};
+
 struct TypeDefinition
 {
   std::string              raw_name;
   std::string              name;
   std::vector<std::string> scopes;
+  std::vector<std::string> declaration_scope;
+  TypeKind                 kind;
   std::string              type_full_name;
   bool                     is_const = false;
   int                      is_reference = 0;
@@ -26,7 +37,7 @@ struct TypeDefinition
 
   TypeDefinition& load_from(CXType, const std::vector<TypeDefinition>& known_types);
   TypeDefinition& load_from(const std::string& name, const std::vector<TypeDefinition>& known_types);
-  unsigned char   type_match(const TypeDefinition&);
+  unsigned char   type_match(const TypeDefinition&) const;
   std::string     solve_type(const std::vector<TypeDefinition>& known_types);
   std::optional<TypeDefinition> find_parent_type(const std::vector<TypeDefinition>& known_types);
   std::string     to_string() const;
@@ -37,7 +48,8 @@ struct EnumDefinition
 {
   std::string name;
   std::string full_name;
-  std::unordered_map<std::string, long long> flags;
+  std::string from_file;
+  std::vector<std::pair<std::string, long long>> flags;
 };
 
 struct ParamDefinition : public std::string

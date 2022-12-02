@@ -38,6 +38,8 @@ void ParamDefinition::initialize_type(CXType type, const std::vector<TypeDefinit
 {
   auto it = type_to_name.find(type.kind);
 
+  if (type.kind == CXType_Invalid)
+    throw std::logic_error("Called ParamDefinition::initialize_type with invalid type");
   if (it != type_to_name.end())
     append(it->second);
   else
