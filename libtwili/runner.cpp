@@ -51,7 +51,7 @@ bool run_parser(TwiliParser& parser, const vector<filesystem::path>& files, int 
     cout << "\r- Importing " << filepath.string() << endl;
     if (unit == nullptr || !parser(unit))
     {
-      cerr << "/!\\ Failed to parse file " << filepath.string() << endl;
+      cerr << "\r/!\\ Failed to parse file " << filepath.string() << endl;
       return false;
     }
     clang_disposeTranslationUnit(unit);

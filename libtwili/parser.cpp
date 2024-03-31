@@ -625,8 +625,6 @@ CXChildVisitResult TwiliParser::visitor(CXCursor parent, CXClientData)
       return visit_enum_constant(symbol_name, parent);
     else if (kind == CXCursor_StructDecl || kind == CXCursor_ClassDecl || kind == CXCursor_ClassTemplate)
       return visit_class(symbol_name, parent);
-    else if (kind == CXCursor_ClassTemplate)
-      functions.push_back(visit_function(symbol_name, parent));
     else
     {
       ClassContext* current_class = find_class_for(parent);
@@ -659,14 +657,15 @@ CXChildVisitResult TwiliParser::visitor(CXCursor parent, CXClientData)
         }
         return CXChildVisit_Recurse;
       }
-      else if (kind == CXCursor_FunctionTemplate)
+      else if (kind == CXCursor_FunctionDecl || kind == CXCursor_FunctionTemplate)
       {
         functions.push_back(visit_function(symbol_name, parent));
-        function_template_context = &(*functions.rbegin());
-        return CXChildVisit_Recurse;
+        if (kind == CXCursor_FunctionTemplate)
+          function_template_context = &(*functions.rbegin());
+        return CXChildVisit_Continue;
       }
-      //else
-      //  cout << "Unhandled decl: " << clang_getCursorKindSpelling(clang_getCursorKind(cursor)) << " -> " <<  symbol_name << endl;
+      else
+        TWILOG("Unhandled decl: " << clang_getCursorKindSpelling(clang_getCursorKind(cursor)) << " -> " <<  symbol_name);
     }
   }
   return CXChildVisit_Continue;
